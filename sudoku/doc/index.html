@@ -1,0 +1,261 @@
+<html><head></head><body><h1>Guess and check</h1>
+
+<p>In this final step you will implement a last resort “guess and
+check” solver. Implement the function <code>guess</code> in the file <code>guess.s</code>.</p>
+
+<pre><code>guess(board, table, position) -&gt;
+    0 -&gt; success
+    1 -&gt; failure
+</code></pre>
+
+<p>In the last few steps the solving process has been driven by the
+function <code>solve</code> defined in <code>solve.s</code>. This function is supplied for
+you, and it has the following interface:</p>
+
+<pre><code>solve(board, table) -&gt;
+    0: solved successfully
+    1: board was unsolvable
+</code></pre>
+
+<p><code>solve</code> works by calculating naked sets until there are no more
+changes, then it checks the status of the board using <code>check_board</code>
+from the previous step. It returns if the board is either solved or
+unsolvable, but calls <code>guess</code> otherwise.</p>
+
+<p><code>guess</code> works by trying out every possible solution value for a
+single unsolved cell (the one whose index is given by the <code>position</code>
+parameter), and calling <code>solve</code> on the result to see if the guess
+leads to a solution.</p>
+
+<p>These two functions are <em>mutually recursive</em>, because <code>solve</code> calls
+<code>guess</code>, and <code>guess</code> calls <code>solve</code>. You do not need to do anything
+special to make recursion work, becuase the normal function calling
+conventions already make it possible. Each new instance of a
+function allocates its own private stack frame, so you will end up
+with a stack structured like this:</p>
+
+<pre><code>    | top of stack          |
+    +-----------------------+
+    | stack frame for solve |
+    | ...                   |
+    +-----------------------+
+    | stack frame for guess |
+    | ...                   |
+    +-----------------------+
+    | stack frame for solve |
+    | ...                   |
+    +-----------------------+
+    | stack frame for guess |
+    | ...                   |
+sp-&gt;+-----------------------+
+</code></pre>
+
+<p><code>solve</code> modifies the board as it works, so when a guess proves to be
+incorrect, you need a way of restoring the board to its state prior
+to the guess. The simplest way is to make a complete backup copy of
+the board (on your stack frame) before making the guess, and then if
+the guess is incorrect use the backup to restore the board to its
+exact state before the guess and then make another guess.</p>
+
+<p>Here are a few details:</p>
+
+<p>Start like a normal non-leaf function with a function prelude that
+sets up the stack frame and saves the s-registers you will need to
+use.</p>
+
+<p>Then, grab another chunk of stack space, this time big enough to
+hold a complete copy of the board. The board is 81×2 = 162 bytes in
+size, but the stack size must always be a multiple of 16 so round it
+up to 176 bytes. The stack frame now has this structure:</p>
+
+<pre><code>    | caller&#39;s stack frame  |
+    +-----------------------+
+    | saved ra register     |
+    +-----------------------+
+    | saved sn register     |
+    +-----------------------+
+    | ...                   |
+    +-----------------------+
+    | saved s1 register     |
+    +-----------------------+
+    | saved s0 register     |
+    +-----------------------+
+    | 176 bytes for board   |
+sp-&gt;+-----------------------+
+</code></pre>
+
+<p>At the end of the function, you should add 176 to the stack pointer
+to free up the board space, then do a normal function prelude where
+you restore saved registers, move the stack pointer back to its
+starting position, and then return.</p>
+
+<p>Within the function, the sp register points to the backup board
+location, and you can just use sp directly (no need to copy it to a
+different register).</p>
+
+<p>Overall, the structure of this function should look like:</p>
+
+<ul>
+<li><p>Copy all 81 elements of the board to the backup board</p>
+
+<pre><code>for i = 0; i &lt; 81; i++
+    temp = board[i]
+    backup[i] = temp
+</code></pre></li>
+
+<li><p>Load the element from the board at <code>position</code></p>
+
+<pre><code>elt = board[position]
+</code></pre></li>
+
+<li><p>for guess in range [1, 9]:</p>
+
+<ul>
+<li><p>Check if the guess is viable (if the corresponding bit is
+set in the element)</p>
+
+<pre><code>shifted = elt &gt;&gt; guess
+bit = shifted &amp; 1
+if bit != 0
+</code></pre></li>
+
+<li><p>If so, print a message (see below), store that as a solved
+value to <code>position</code> on the original board (not the backup)
+and call <code>solve</code></p>
+
+<pre><code>puts(msg_guess_1)
+print_n(guess)
+puts(msg_guess_2)
+col = position % 9
+print_n(col)
+puts(msg_guess_3)
+row = position / 9
+print_n(row)
+puts(msg_guess_4)
+
+
+board[position] = 1 &lt;&lt; guess
+result = solve(board, table)
+</code></pre></li>
+
+<li><p>If <code>solve</code> reports the board as solved, return 0</p>
+
+<pre><code>if result == 0:
+    return 0
+</code></pre></li>
+
+<li><p>Otherwise, copy all 81 elements from the backup to the
+original board to restore it to the pre-guess state</p>
+
+<pre><code>for i = 0; i &lt; 81; i++
+    temp = backup[i]
+    board[i] = temp
+</code></pre></li>
+</ul></li>
+
+<li><p>No solution was found after trying all possible guesses, so
+return 1</p>
+
+<pre><code>return 1
+</code></pre></li>
+</ul>
+
+<p>Make sure that all return paths clean up the stack properly (adding
+176 to sp first to free up the backup board space, then proceeding
+with a normal funciton postlude).</p>
+
+<p><code>_start</code>, <code>read_board</code>, and <code>solve</code> all print messages to the screen
+as the solving process progresses. In this step you will also print
+a message each time you make a guess. The message should be of the
+form:</p>
+
+<pre><code>Guessing 3 at position (5, 6)
+</code></pre>
+
+<p>The text parts of the message are at the top of <code>guess.s</code>:</p>
+
+<pre><code>                .data
+msg_guess_1:    .asciz  &#34;\nGuessing &#34;
+msg_guess_2:    .asciz  &#34; at position (&#34;
+msg_guess_3:    .asciz  &#34;, &#34;
+msg_guess_4:    .asciz  &#34;)\n&#34;
+</code></pre>
+
+<p>You can also use the following helper functions to print:</p>
+
+<ul>
+<li><code>puts(string)</code>: given the address of a null-terminated string in
+memory, print it to the screen (this is defined in
+<code>lib/print.s</code>).</li>
+<li><code>print_n(n)</code>: given a number, convert it to a string and print
+it to the screen (also defined in <code>lib/print.s</code>).</li>
+</ul>
+
+<p>When you are about to make a guess, print the <code>msg_guess_1</code> string
+by loading its address into <code>a0</code> and then calling <code>puts</code>:</p>
+
+<pre><code>la      a0, msg_guess_1
+call    puts
+</code></pre>
+
+<p>Then call <code>print_n</code> with the guess value itself, then use <code>puts</code> to
+print <code>msg_guess_2</code>. To print an integer, put it in <code>a0</code> and call
+<code>print_n</code>, e.g.:</p>
+
+<pre><code>li      a0, 12345
+call    print_n
+</code></pre>
+
+<p>At this point you need to convert a board index value, a value in
+the range [0,81), into X and Y coordinates:</p>
+
+<ul>
+<li>Take the remainder from dividing index by 9 and print it using
+<code>print_n</code></li>
+<li>Use <code>puts</code> to print <code>msg_guess_3</code></li>
+<li>Divide index by 9 (which will discard the remainder) and print
+the result using <code>print_n</code>.</li>
+<li>Print the final <code>msg_guess_4</code> string using <code>puts</code>.</li>
+</ul>
+
+<p>The instructions <code>div</code> and <code>rem</code> compute the integer quotient and
+remainder, respectively.</p>
+
+<h2>Additional tests</h2>
+
+<p>This step adds 10 new test boards. These were drawn from this list
+of 20 known hard-to-solve boards:</p>
+
+<ul>
+<li><a href="https://github.com/attractivechaos/plb/blob/master/sudoku/sudoku.txt">https://github.com/attractivechaos/plb/blob/master/sudoku/sudoku.txt</a></li>
+</ul>
+
+<p>The tests include the 10 on this list with the shortest output (when
+tested on our solver) to keep the problem size down in CodeGrinder.</p>
+
+<p>The solver successfully solves all 20 of them with the following
+times on my desktop machine:</p>
+
+<ol>
+<li>0.037s</li>
+<li>0.259s</li>
+<li>2.491s</li>
+<li>7.300s</li>
+<li>0.876s</li>
+<li>1.420s</li>
+<li>2.986s</li>
+<li>2.082s</li>
+<li>1.166s</li>
+<li>0.235s</li>
+<li>4.508s</li>
+<li>6.023s</li>
+<li>0.073s</li>
+<li>0.085s</li>
+<li>0.027s</li>
+<li>4.938s</li>
+<li>0.027s</li>
+<li>0.037s</li>
+<li>1.945s</li>
+<li>1.536s</li>
+</ol>
+</body></html>
